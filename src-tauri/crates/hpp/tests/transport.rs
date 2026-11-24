@@ -38,6 +38,7 @@ async fn fixture(
             }else{out=out.header("content-length",bytes.len());bytes.into()}
         },
         "/image"=>"fixture-image".into(),
+        "/legacy"=>return out.header("content-type","text/html; Charset=GBK").body(Body::from(&b"\xb5\xda1\xbc\xaf"[..])).unwrap(),
         "/subtitle"=>{out=out.header("content-type","application/octet-stream");"1\r\n00:00:01,000 --> 00:00:02,500\r\n字幕\r\n".into()},
         _=>"fixture-resource".into()
     };
@@ -65,6 +66,33 @@ fn manager(dir: &tempfile::TempDir) -> Arc<PluginManager> {
 }
 fn params() -> Value {
     json!({"mediaId":"one","episodeId":"ep1","playlistId":"main","reason":"play","codecs":["h264"]})
+}
+
+#[tokio::test]
+async fn http_text_uses_response_charset_case_insensitively() {
+    let (base, _, task) = server().await;
+    let dir = tempfile::tempdir().unwrap();
+    let m = manager(&dir);
+    let source = format!(
+        r#"
+      export const meta={{id:'fixture.charset',name:'Charset',version:'1.0.0',protocol:1,allowInsecureHttp:true}};
+      export default hg=>({{media:{{getDetail(){{}},resolvePlayback(){{}}}},
+        search:{{async search(){{const r=await hg.http.fetch({{url:'{base}/legacy'}});return {{items:[{{id:'x',title:r.data}}]}};}}}}
+      }});
+    "#
+    );
+    m.import_code(source, None, false).await.unwrap();
+    let value = m
+        .call(
+            "fixture.charset",
+            "search.search",
+            json!({"query":"x"}),
+            "charset".into(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(value["items"][0]["title"], "第1集");
+    task.abort();
 }
 
 #[tokio::test]

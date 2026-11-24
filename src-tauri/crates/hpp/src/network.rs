@@ -713,9 +713,10 @@ impl Network {
                 .or_else(|| {
                     meta["headers"]["content-type"].as_str().and_then(|s| {
                         s.split(';').find_map(|x| {
-                            x.trim()
-                                .strip_prefix("charset=")
-                                .map(|s| s.trim_matches('"').to_string())
+                            let (name, value) = x.trim().split_once('=')?;
+                            name.trim()
+                                .eq_ignore_ascii_case("charset")
+                                .then(|| value.trim().trim_matches('"').to_string())
                         })
                     })
                 })
